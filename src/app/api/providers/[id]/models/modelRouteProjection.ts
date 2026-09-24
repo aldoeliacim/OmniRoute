@@ -108,7 +108,7 @@ export async function buildNoAuthModelsResponse(
     connectionId,
     models: visible,
     source: "local_catalog",
-    // #5460/#5465 — a no-auth provider with no `modelsUrl` has no remote model
+    // A no-auth provider with no `modelsUrl` has no remote model
     // endpoint at all, so this catalog is its INTENDED and only discovery
     // source (same as reka/lmarena), not a degraded remote fetch. Without the
     // tag, model-sync's isDegradedDiscovery guard 502s before importing and the
