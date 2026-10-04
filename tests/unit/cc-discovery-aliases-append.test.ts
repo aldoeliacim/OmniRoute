@@ -68,15 +68,43 @@ test("never re-mirrors ids that already start with claude or anthropic", () => {
   assert.equal(out[out.length - 1].id, "claude/claudeish/not-actually-claude");
 });
 
-test("never aliases no-think/ ids or effort-suffixed ids", () => {
+test("never aliases no-think/ ids or ids already in the claude namespace", () => {
   const models: CatalogEntry[] = [
     { id: "no-think/claude/claude-fable-5", owned_by: "claude" },
+    { id: "no-think/kimi/kimi-k2.6", owned_by: "kimi" },
     { id: "claude/claude-fable-5-high", owned_by: "claude" },
     { id: "claude/claude-fable-5-xhigh", owned_by: "claude" },
-    { id: "kimi/kimi-k2.6-medium", owned_by: "kimi" },
   ];
   const out = appendCcDiscoveryAliases(models, alwaysEnabled);
   assert.equal(out, models);
+});
+
+test("mirrors reasoning-effort variants like any other id (all effort tiers reachable)", () => {
+  // Registered effort variants (codex/gpt-6-sol-low … -ultra) are routable ids; the
+  // mirror must cover every tier, not only -max/-ultra, or Claude Code discovery
+  // can pick gpt-6-sol-max but never gpt-6-sol-low.
+  const models: CatalogEntry[] = [
+    { id: "codex/gpt-6-sol", owned_by: "codex", name: "GPT 6 Sol" },
+    { id: "codex/gpt-6-sol-low", owned_by: "codex", name: "GPT 6 Sol (Low)" },
+    { id: "codex/gpt-6-sol-xhigh", owned_by: "codex", name: "GPT 6 Sol (xHigh)" },
+    { id: "codex/gpt-6-sol-max", owned_by: "codex", name: "GPT 6 Sol (Max)" },
+    { id: "kimi/kimi-k2.6-medium", owned_by: "kimi" },
+  ];
+  const out = appendCcDiscoveryAliases(models, alwaysEnabled);
+  const mirrors = out.slice(models.length);
+  assert.deepEqual(
+    mirrors.map((m) => m.id),
+    [
+      "claude/codex/gpt-6-sol",
+      "claude/codex/gpt-6-sol-low",
+      "claude/codex/gpt-6-sol-xhigh",
+      "claude/codex/gpt-6-sol-max",
+      "claude/kimi/kimi-k2.6-medium",
+    ]
+  );
+  const low = mirrors.find((m) => m.id === "claude/codex/gpt-6-sol-low");
+  assert.equal(low?.root, "gpt-6-sol-low", "root keeps the suffix the request path dispatches on");
+  assert.equal(low?.display_name, "GPT 6 Sol (Low) (OmniRoute)");
 });
 
 test("mirrors combo entries under claude/combo/", () => {
