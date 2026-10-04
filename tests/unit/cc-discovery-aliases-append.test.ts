@@ -5,6 +5,7 @@ import {
   CC_DISCOVERY_PREFIX,
   CC_DISCOVERY_COMBO_PREFIX,
   appendCcDiscoveryAliases,
+  isCcDiscoveryAlias,
 } from "../../open-sse/utils/ccDiscoveryAliases.ts";
 
 interface CatalogEntry {
@@ -66,6 +67,18 @@ test("never re-mirrors ids that already start with claude or anthropic", () => {
   // so it is still eligible for mirroring — only exact claude/anthropic prefixes are excluded.
   assert.equal(out.length, models.length + 1);
   assert.equal(out[out.length - 1].id, "claude/claudeish/not-actually-claude");
+});
+
+test("tags each alias so later catalog passes can recognise it", () => {
+  const models: CatalogEntry[] = [{ id: "kimi/kimi-k2.6", owned_by: "kimi" }];
+  const out = appendCcDiscoveryAliases(models, () => true);
+  assert.equal(isCcDiscoveryAlias(out[0]), false);
+  assert.equal(isCcDiscoveryAlias(out[1]), true);
+  assert.equal(
+    Object.keys(out[1]).some((k) => k.includes("ccDiscovery")),
+    false,
+    "the tag must not serialize into the /v1/models payload"
+  );
 });
 
 test("never aliases no-think/ ids or ids already in the claude namespace", () => {

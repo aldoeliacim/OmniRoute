@@ -17,7 +17,13 @@
  * already key-filtered list — no I/O.
  */
 
+import { isCcDiscoveryAlias } from "./ccDiscoveryAliases.ts";
+
 export const FUNCTIONAL_GATEWAY_MIRROR_SUFFIX = " (via ";
+
+// Kept local (not imported from noThinkingAlias.ts) so this pure helper stays
+// free of the model-spec dependency that module pulls in.
+const NO_THINKING_PREFIX = "no-think/";
 
 const FUNCTIONAL_GATEWAY_MIRROR = Symbol("functionalGatewayMirror");
 
@@ -72,6 +78,11 @@ export function appendFunctionalGatewayMirrors<T extends GatewayMirrorCatalogEnt
     // Combos (incl. built-in `auto/*`) are resolved by OmniRoute itself, not by any
     // provider — a gateway cannot route them, so a mirror would be advertised-but-dead.
     if (model.owned_by === "combo") continue;
+    // Same for OmniRoute-synthesized ids: a `claude/…` discovery alias and a
+    // `no-think/…` variant only resolve through OmniRoute's own prefix handling,
+    // which runs on the leading segment — behind a gateway prefix the upstream
+    // gateway receives the synthetic id verbatim and rejects it.
+    if (isCcDiscoveryAlias(model) || id.startsWith(NO_THINKING_PREFIX)) continue;
     // The id prefix is not always the owner's provider id: in `dual`/`alias` catalog
     // modes it is the short alias (`cx/…` for codex) or a synthetic namespace
     // (`no-think/…`). Checking that prefix against the connection table always

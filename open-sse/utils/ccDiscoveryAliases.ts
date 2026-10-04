@@ -39,12 +39,24 @@ export const CC_DISCOVERY_COMBO_PREFIX = "claude/combo/";
 const ALREADY_CLAUDE_RE = /^(?:claude|anthropic)(?:\/|$)/i;
 const NO_THINKING_PREFIX = "no-think/";
 
+const CC_DISCOVERY_ALIAS = Symbol("ccDiscoveryAlias");
+
 interface CcDiscoveryCatalogEntry {
   id?: unknown;
   owned_by?: unknown;
   name?: unknown;
   root?: unknown;
+  [CC_DISCOVERY_ALIAS]?: true;
   [key: string]: unknown;
+}
+
+/**
+ * True for an entry synthesized by {@link appendCcDiscoveryAliases}. Later catalog
+ * passes use it to avoid re-mirroring a mirror: the alias only resolves through
+ * OmniRoute's own `claude/` strip, so no upstream provider can route it.
+ */
+export function isCcDiscoveryAlias(model: CcDiscoveryCatalogEntry): boolean {
+  return model?.[CC_DISCOVERY_ALIAS] === true;
 }
 
 /**
@@ -96,6 +108,7 @@ export function appendCcDiscoveryAliases<T extends CcDiscoveryCatalogEntry>(
       // the "/" stripped down to the bare model name.
       root: isCombo ? id : bareModelName(id),
       display_name: `${label} (OmniRoute)`,
+      [CC_DISCOVERY_ALIAS]: true,
     } as T);
   }
 

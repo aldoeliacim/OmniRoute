@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { appendFunctionalGatewayMirrors } from "../../open-sse/utils/functionalGatewayMirrors.ts";
+import { appendCcDiscoveryAliases } from "../../open-sse/utils/ccDiscoveryAliases.ts";
 
 interface CatalogEntry {
   id: string;
@@ -131,6 +132,34 @@ test("never mirrors a model onto its own owner via that owner's alias", () => {
     canonicalOwnerHasConnection: () => false,
   });
   assert.equal(out, models, "kc/kilocode/<model> would just re-route to the same provider");
+});
+
+test("never mirrors OmniRoute-synthesized ids, even when their owner has no connection", () => {
+  // `claude/…` discovery aliases and `no-think/…` variants only resolve through
+  // OmniRoute's own leading-prefix handling; behind a gateway prefix the gateway
+  // gets the synthetic id verbatim and rejects it.
+  const ccAliased = appendCcDiscoveryAliases(
+    [{ id: "dva/claude-fable-5-1-max", owned_by: "devin-cli-agentic" }] as CatalogEntry[],
+    () => true
+  );
+  const models: CatalogEntry[] = [
+    ...ccAliased,
+    { id: "no-think/dva/claude-fable-5-1-max", owned_by: "devin-cli-agentic" },
+  ];
+  const out = appendFunctionalGatewayMirrors(models, {
+    ...kcDeps,
+    canonicalOwnerHasConnection: () => false,
+  });
+  assert.deepEqual(
+    out.map((m) => m.id),
+    [
+      "dva/claude-fable-5-1-max",
+      "claude/dva/claude-fable-5-1-max",
+      "no-think/dva/claude-fable-5-1-max",
+      "kc/dva/claude-fable-5-1-max",
+    ],
+    "only the real model id gets a gateway mirror"
+  );
 });
 
 test("still mirrors when the real owner (from owned_by) has no connection", () => {
