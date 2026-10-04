@@ -67,9 +67,20 @@ export function appendFunctionalGatewayMirrors<T extends GatewayMirrorCatalogEnt
 
     const slashIndex = id.indexOf("/");
     if (slashIndex <= 0) continue; // no provider prefix to re-home
-    const owner = id.slice(0, slashIndex);
     const modelId = id.slice(slashIndex + 1);
     if (!modelId || modelId === id) continue;
+    // Combos (incl. built-in `auto/*`) are resolved by OmniRoute itself, not by any
+    // provider — a gateway cannot route them, so a mirror would be advertised-but-dead.
+    if (model.owned_by === "combo") continue;
+    // The id prefix is not always the owner's provider id: in `dual`/`alias` catalog
+    // modes it is the short alias (`cx/…` for codex) or a synthetic namespace
+    // (`no-think/…`). Checking that prefix against the connection table always
+    // misses, so every such model got a dead `<gateway>/<id>` mirror even though its
+    // real owner was connected. `owned_by` carries the real provider id.
+    const owner =
+      typeof model.owned_by === "string" && model.owned_by
+        ? model.owned_by
+        : id.slice(0, slashIndex);
 
     // Skip if the canonical owner already has a working connection for this model.
     if (deps.canonicalOwnerHasConnection(owner)) continue;
@@ -79,7 +90,7 @@ export function appendFunctionalGatewayMirrors<T extends GatewayMirrorCatalogEnt
     let chosenProvider: string | null = null;
     for (const gatewayProvider of deps.gatewayProviderIds) {
       const alias = deps.gatewayAlias(gatewayProvider);
-      if (!alias || alias === owner) continue;
+      if (!alias || alias === owner || gatewayProvider === owner) continue;
       if (!deps.isGateway(gatewayProvider)) continue;
       if (!deps.gatewayHasConnection(gatewayProvider)) continue;
       if (!deps.gatewayCovers(gatewayProvider, modelId)) continue;

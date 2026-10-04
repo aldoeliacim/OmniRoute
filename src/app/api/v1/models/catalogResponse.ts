@@ -25,6 +25,11 @@ import {
 import { buildFunctionalGatewayPredicate } from "./functionalGatewayPredicate";
 import { getPassthroughProviders, REGISTRY } from "@omniroute/open-sse/config/providerRegistry";
 import { hasEligibleConnectionForModel } from "@/domain/connectionModelRules";
+import {
+  catalogContainsModel,
+  getActiveSyncedCatalog,
+  type ActiveSyncedCatalog,
+} from "@/lib/db/models/activeSyncedCatalog";
 import { dedupeExactCatalogIds } from "./catalogDedupe";
 import { sortCatalogModelsProviderGrouped } from "./catalogOrder";
 import {
@@ -187,6 +192,16 @@ export async function applyCatalogPostFilters(
   const fgSettings = getFunctionalGatewaySettingsBulk();
   if (fgGlobal || fgSettings.providers.size > 0 || fgSettings.models.size > 0) {
     const gatewayProviderIds = [...getPassthroughProviders()];
+    // A gateway whose live catalog is authoritative rejects any model outside it at
+    // request time ("not available in the active live catalog"), so a mirror for
+    // such a model is advertised-but-dead. Load each connected gateway's catalog
+    // once; `catalogContainsModel` fails open (null) while no authoritative
+    // catalog is synced, matching the request path.
+    const gatewayLiveCatalogs = new Map<string, ActiveSyncedCatalog>();
+    for (const provider of gatewayProviderIds) {
+      if (!ctx.connections.some((c) => c.provider === provider)) continue;
+      gatewayLiveCatalogs.set(provider, await getActiveSyncedCatalog(provider));
+    }
     finalModels = appendFunctionalGatewayMirrors(finalModels, {
       gatewayProviderIds,
       isGateway: (provider) => getPassthroughProviders().has(provider),
@@ -195,7 +210,11 @@ export async function applyCatalogPostFilters(
         hasEligibleConnectionForModel(
           ctx.connections.filter((c) => c.provider === provider),
           modelId
-        ),
+        ) &&
+        catalogContainsModel(
+          gatewayLiveCatalogs.get(provider) ?? { authoritative: false, models: [] },
+          modelId
+        ) !== false,
       gatewayHasConnection: (provider) => ctx.connections.some((c) => c.provider === provider),
       canonicalOwnerHasConnection: (owner) =>
         hasEligibleConnectionForModel(

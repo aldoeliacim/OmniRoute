@@ -81,3 +81,65 @@ test("never mirrors ids that already carry the gateway alias prefix", () => {
   const out = appendFunctionalGatewayMirrors(models, deps);
   assert.equal(out.length, 1); // unchanged
 });
+
+// A gateway with a distinct short alias (kilocode -> kc), and a connected codex owner.
+const kcDeps = {
+  gatewayProviderIds: ["kilocode"],
+  isGateway: (p: string) => p === "kilocode",
+  gatewayAlias: (p: string) => (p === "kilocode" ? "kc" : p),
+  gatewayCovers: () => true,
+  gatewayHasConnection: (p: string) => p === "kilocode",
+  canonicalOwnerHasConnection: (owner: string) => owner === "codex" || owner === "claude",
+};
+
+test("resolves the owner from owned_by, not the id prefix (alias-prefixed ids)", () => {
+  // In `dual`/`alias` catalog modes codex models are also listed as `cx/<model>`.
+  // `cx` is not a provider id, so keying the owner check on the prefix reported
+  // "no connection" for a connected codex account and emitted a dead
+  // `kc/cx/<model>` mirror that the request path then rejects.
+  const models: CatalogEntry[] = [
+    { id: "cx/gpt-6-sol-low", owned_by: "codex", root: "gpt-6-sol-low" },
+    { id: "codex/gpt-6-sol-low", owned_by: "codex", root: "gpt-6-sol-low" },
+  ];
+  const out = appendFunctionalGatewayMirrors(models, kcDeps);
+  assert.equal(out, models, "connected owner behind an alias prefix must not be mirrored");
+});
+
+test("does NOT mirror synthetic no-think/ ids whose real owner is connected", () => {
+  const models: CatalogEntry[] = [
+    { id: "no-think/claude/claude-opus-5-5", owned_by: "claude", root: "claude-opus-5-5" },
+  ];
+  const out = appendFunctionalGatewayMirrors(models, kcDeps);
+  assert.equal(out, models);
+});
+
+test("never mirrors combos (incl. built-in auto/*): gateways cannot route them", () => {
+  const models: CatalogEntry[] = [
+    { id: "auto/best-fast", owned_by: "combo", root: "auto/best-fast" },
+    { id: "team/primary", owned_by: "combo", root: "team/primary" },
+  ];
+  const out = appendFunctionalGatewayMirrors(models, kcDeps);
+  assert.equal(out, models);
+});
+
+test("never mirrors a model onto its own owner via that owner's alias", () => {
+  const models: CatalogEntry[] = [
+    { id: "kilocode/some-free-model", owned_by: "kilocode", root: "some-free-model" },
+  ];
+  const out = appendFunctionalGatewayMirrors(models, {
+    ...kcDeps,
+    canonicalOwnerHasConnection: () => false,
+  });
+  assert.equal(out, models, "kc/kilocode/<model> would just re-route to the same provider");
+});
+
+test("still mirrors when the real owner (from owned_by) has no connection", () => {
+  const models: CatalogEntry[] = [
+    { id: "ds/deepseek-v4-flash", owned_by: "deepseek", root: "deepseek-v4-flash" },
+  ];
+  const out = appendFunctionalGatewayMirrors(models, kcDeps);
+  assert.deepEqual(
+    out.map((m) => m.id),
+    ["ds/deepseek-v4-flash", "kc/ds/deepseek-v4-flash"]
+  );
+});
