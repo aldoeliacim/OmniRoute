@@ -34,7 +34,11 @@ export interface FunctionalGatewayMirrorsDeps {
   isGateway(provider: string): boolean;
   /** Map a gateway provider id to its catalog alias (e.g. "command-code" -> "cmd"). */
   gatewayAlias(provider: string): string;
-  /** True when `gatewayProvider` has an eligible connection that covers `modelId`. */
+  /**
+   * True when `gatewayProvider` has an eligible connection that covers `modelId`.
+   * `modelId` is the full original id (e.g. `oc/big-pickle`): the mirror is
+   * `<gatewayAlias>/<originalId>`, so that is exactly what the gateway receives.
+   */
   gatewayCovers(gatewayProvider: string, modelId: string): boolean;
   /** True when `gatewayProvider` has an active credential/connection. */
   gatewayHasConnection(gatewayProvider: string): boolean;
@@ -104,7 +108,7 @@ export function appendFunctionalGatewayMirrors<T extends GatewayMirrorCatalogEnt
       if (!alias || alias === owner || gatewayProvider === owner) continue;
       if (!deps.isGateway(gatewayProvider)) continue;
       if (!deps.gatewayHasConnection(gatewayProvider)) continue;
-      if (!deps.gatewayCovers(gatewayProvider, modelId)) continue;
+      if (!deps.gatewayCovers(gatewayProvider, id)) continue;
       chosenAlias = alias;
       chosenProvider = gatewayProvider;
       break;

@@ -172,3 +172,25 @@ test("still mirrors when the real owner (from owned_by) has no connection", () =
     ["ds/deepseek-v4-flash", "kc/ds/deepseek-v4-flash"]
   );
 });
+
+test("asks the gateway about the full id it will actually receive", () => {
+  // The mirror is `<gatewayAlias>/<originalId>`, so the gateway is sent
+  // `ds/deepseek-v4-flash` — not the prefix-stripped `deepseek-v4-flash`, which
+  // a gateway may well list while still rejecting the prefixed form.
+  const asked: string[] = [];
+  const models: CatalogEntry[] = [
+    { id: "ds/deepseek-v4-flash", owned_by: "deepseek", root: "deepseek-v4-flash" },
+  ];
+  const out = appendFunctionalGatewayMirrors(models, {
+    ...kcDeps,
+    gatewayCovers: (_p: string, modelId: string) => {
+      asked.push(modelId);
+      return modelId === "deepseek-v4-flash";
+    },
+  });
+  assert.deepEqual(asked, ["ds/deepseek-v4-flash"]);
+  assert.deepEqual(
+    out.map((m) => m.id),
+    ["ds/deepseek-v4-flash"]
+  );
+});

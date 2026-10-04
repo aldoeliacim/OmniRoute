@@ -16,6 +16,7 @@ const apiKeysDb = await import("../../src/lib/db/apiKeys.ts");
 const featureFlagsDb = await import("../../src/lib/db/featureFlags.ts");
 const functionalGatewayDb = await import("../../src/lib/db/functionalGatewayMirrors.ts");
 const modelsDb = await import("../../src/lib/db/models.ts");
+const settingsDb = await import("../../src/lib/db/settings.ts");
 const v1ModelsCatalog = await import("../../src/app/api/v1/models/catalog.ts");
 
 async function resetStorage() {
@@ -157,4 +158,43 @@ test("v1 models catalog skips gateway mirrors the gateway's authoritative live c
 
   assert.equal(response.status, 200);
   assert.deepEqual(mirrors, ["agentrouter/oc/big-pickle"]);
+});
+
+test("v1 models catalog does not accept a prefix-stripped live-catalog match for a gateway mirror", async () => {
+  // The gateway is sent the full `oc/big-pickle`; listing only `big-pickle` must
+  // not count (dispatch matches the full id and rejects it).
+  const gateway = (await seedConnection("agentrouter")) as { id: string };
+  featureFlagsDb.setFeatureFlagOverride("EXPOSE_FUNCTIONAL_GATEWAY_MIRRORS", "true");
+  functionalGatewayDb.setFunctionalGatewayProviderSetting("agentrouter", "on");
+  await modelsDb.replaceSyncedAvailableModelsForConnection("agentrouter", gateway.id, [
+    { id: "big-pickle", name: "Big Pickle" },
+  ]);
+
+  const response = await v1ModelsCatalog.getUnifiedModelsResponse(
+    new Request("http://localhost/api/v1/models")
+  );
+  const ids = catalogIds(await response.json());
+
+  assert.equal(response.status, 200);
+  assert.equal(ids.has("agentrouter/oc/big-pickle"), false);
+});
+
+test("v1 models catalog does not mirror through a gateway disabled in blockedProviders", async () => {
+  // A blocked gateway keeps its connection row but has no usable credential at
+  // request time, so its mirrors would all be advertised-but-dead.
+  await seedConnection("agentrouter");
+  featureFlagsDb.setFeatureFlagOverride("EXPOSE_FUNCTIONAL_GATEWAY_MIRRORS", "true");
+  functionalGatewayDb.setFunctionalGatewayProviderSetting("agentrouter", "on");
+  await settingsDb.updateSettings({ blockedProviders: ["agentrouter"] });
+
+  const response = await v1ModelsCatalog.getUnifiedModelsResponse(
+    new Request("http://localhost/api/v1/models")
+  );
+  const ids = catalogIds(await response.json());
+
+  assert.equal(response.status, 200);
+  assert.equal(
+    [...ids].some((id) => id.startsWith("agentrouter/")),
+    false
+  );
 });
