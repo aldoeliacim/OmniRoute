@@ -32,6 +32,8 @@
  *  - entries the caller's `isEnabled` predicate rejects.
  */
 
+import { isResolvableBuiltinAutoId } from "../services/autoCombo/builtinCatalog.ts";
+
 export const CC_DISCOVERY_PREFIX = "claude/";
 export const CC_DISCOVERY_COMBO_PREFIX = "claude/combo/";
 
@@ -69,11 +71,13 @@ export function isCcDiscoveryAlias(model: CcDiscoveryCatalogEntry): boolean {
  */
 /**
  * Ids the mirror must never cover: already claude/anthropic (would double-prefix
- * or shadow the base id) and `no-think/…` aliases.
+ * or shadow the base id) and `no-think/…` aliases. Built-in `auto/*` ids are
+ * only mirrored when the request path will actually resolve them.
  */
 function isMirrorableId(id: string): boolean {
   if (id.length === 0) return false;
   if (ALREADY_CLAUDE_RE.test(id)) return false;
+  if ((id === "auto" || id.startsWith("auto/")) && !isResolvableBuiltinAutoId(id)) return false;
   return !id.startsWith(NO_THINKING_PREFIX);
 }
 
