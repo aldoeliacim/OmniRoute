@@ -15,6 +15,7 @@ import { chatStrictForResponses } from "../../helpers/toolStrict.ts";
 import {
   JsonRecord,
   RESPONSES_STORE_MARKER,
+  REASONING_SUMMARY_OPT_OUT_MARKER,
   toRecord,
   toArray,
   toString,
@@ -37,10 +38,11 @@ const RESPONSES_REASONING_ENCRYPTED_CONTENT_INCLUDE = "reasoning.encrypted_conte
 // OpenAI's safety system flags `reasoning.effort` + `summary: "auto"` +
 // `include: ["reasoning.encrypted_content"]` on certain models (e.g. gpt-6.1-sol)
 // as "Potentially unintended activity" when combined with a long system prompt.
-// Skip the defaulted summary + encrypted-content include for Codex-family models
-// so the translated body stays close to what the client sent.
+// Skip the defaulted summary + encrypted-content include for the listed models
+// (optional `codex/` or `cx/` routing prefix, optional effort suffix) so the
+// translated body stays close to what the client sent.
 const CODEX_MODEL_PATTERN =
-  /^(?:codex|cx)\/|(?:gpt-6(?:\.1)?-(?:astra|sol|luna)|gpt-5\.6-(?:sol|terra|luna))(?:-(?:none|low|medium|high|xhigh|max|ultra))?$/;
+  /^(?:(?:codex|cx)\/)?(?:gpt-6(?:\.1)?-(?:astra|sol|luna)|gpt-5\.6-(?:sol|terra|luna))(?:-(?:none|low|medium|high|xhigh|max|ultra))?$/;
 function isCodexModel(model: unknown): boolean {
   if (typeof model !== "string") return false;
   return CODEX_MODEL_PATTERN.test(model.trim().toLowerCase());
@@ -556,6 +558,10 @@ export function openaiToOpenAIResponsesRequest(
       // unintended activity" when combined with a long system prompt.
       if (isCodexModel(model ?? root.model)) {
         result.reasoning = { effort };
+        // Tell the Codex executor not to re-add the defaults on the wire. Native
+        // Responses clients never carry this marker, so they keep their
+        // encrypted-reasoning continuity.
+        result[REASONING_SUMMARY_OPT_OUT_MARKER] = true;
       } else {
         result.reasoning = { effort, summary: DEFAULT_RESPONSES_REASONING_SUMMARY };
         defaultedReasoningSummary = true;
