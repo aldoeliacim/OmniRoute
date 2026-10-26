@@ -12,6 +12,12 @@ import assert from "node:assert/strict";
 const { openaiResponsesToOpenAIRequest, openaiToOpenAIResponsesRequest } =
   await import("../../open-sse/translator/request/openai-responses.ts");
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
 type ChatMsg = { role: string; tool_call_id?: string; content?: unknown };
 
 test("Responses -> OpenAI: orphaned function_call_output is stripped", () => {
@@ -146,16 +152,8 @@ test("Codex model with reasoning_effort gets effort-only reasoning (no summary, 
     ) as { reasoning?: { effort?: string; summary?: string }; include?: unknown[] };
 
     assert.equal(out.reasoning?.effort, "high", `${model}: effort preserved`);
-    assert.equal(
-      out.reasoning?.summary,
-      undefined,
-      `${model}: no defaulted summary for Codex`
-    );
-    assert.equal(
-      out.include,
-      undefined,
-      `${model}: no encrypted_content include for Codex`
-    );
+    assert.equal(out.reasoning?.summary, undefined, `${model}: no defaulted summary for Codex`);
+    assert.equal(out.include, undefined, `${model}: no encrypted_content include for Codex`);
   }
 });
 

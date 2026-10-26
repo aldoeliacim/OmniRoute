@@ -39,7 +39,6 @@ const RESPONSES_REASONING_ENCRYPTED_CONTENT_INCLUDE = "reasoning.encrypted_conte
 // as "Potentially unintended activity" when combined with a long system prompt.
 // Skip the defaulted summary + encrypted-content include for Codex-family models
 // so the translated body stays close to what the client sent.
-// See https://github.com/diegosouzapw/OmniRoute/issues/17199
 const CODEX_MODEL_PATTERN =
   /^(?:codex|cx)\/|(?:gpt-6(?:\.1)?-(?:astra|sol|luna)|gpt-5\.6-(?:sol|terra|luna))(?:-(?:none|low|medium|high|xhigh|max|ultra))?$/;
 function isCodexModel(model: unknown): boolean {
