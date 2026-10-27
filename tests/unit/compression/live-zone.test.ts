@@ -258,29 +258,35 @@ describe("cache-aligned live-zone compression", () => {
     assert.equal(getLiveZoneCacheStats().entries, 0);
   });
 
-  it("preserves all messages when nothing new to append beyond frozen prefix", async () => {
-    const calls: Array<Record<string, unknown>> = [];
-    const compress = toolCompressor(calls);
-    const first = {
-      messages: [
-        { role: "system", content: "system" },
-        { role: "user", content: "user turn" },
-        { role: "tool", content: "tool output" },
-      ],
-    };
-    const firstResult = await applyLiveZoneCompression(first, options, compress);
+  for (const field of ["messages", "input"] as const) {
+    it(`preserves an unchanged ${field} history and current request controls`, async () => {
+      const calls: Array<Record<string, unknown>> = [];
+      const compress = toolCompressor(calls);
+      const first = {
+        model: "synthetic-model",
+        stream: false,
+        max_output_tokens: 1024,
+        reasoning: { effort: "medium" },
+        instructions: "stable instructions",
+        [field]: [
+          { role: "user", content: "user turn" },
+          { role: "tool", content: "tool output" },
+        ],
+      };
+      const firstResult = await applyLiveZoneCompression(first, options, compress);
+      const repeated = { ...first, stream: true, max_output_tokens: 2048 };
+      const unchangedResult = await applyLiveZoneCompression(repeated, options, compress);
 
-    // Second call with identical messages — every item is frozen, so liveItems is empty.
-    // Before the fix this called compress() with an empty messages array, sending zero
-    // messages to the provider (codex/gpt-6.1-sol safety block).
-    const unchangedResult = await applyLiveZoneCompression(first, options, compress);
-
-    assert.equal(calls.length, 1, "compressor must not run again when nothing is live");
-    assert.deepEqual(
-      unchangedResult.body.messages,
-      firstResult.body.messages,
-      "messages must be preserved unchanged when all items are frozen"
-    );
-    assert.equal(unchangedResult.compressed, false);
-  });
+      assert.equal(calls.length, 1, "unchanged history must not rerun the compressor");
+      assert.deepEqual(unchangedResult.body, {
+        ...repeated,
+        [field]: firstResult.body[field],
+      });
+      assert.deepEqual(unchangedResult.stats?.liveZone, {
+        cacheHit: true,
+        frozenItems: first[field].length,
+        liveItems: 0,
+      });
+    });
+  }
 });
