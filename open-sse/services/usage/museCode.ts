@@ -22,7 +22,6 @@ invent a fetch to `api.meta.ai` unless Meta publishes a usage endpoint.
 */
 
 import { toRecord } from "./scalars.ts";
-import type { UsageQuota } from "./quota.ts";
 
 /** Muse Code usage fetcher.
  *
@@ -33,22 +32,16 @@ import type { UsageQuota } from "./quota.ts";
  * response so the quota page shows tier info without fabricating numbers.
  */
 export async function getMuseUsage(
-  accessToken?: string,
+  _accessToken?: string,
   providerSpecificData: Record<string, unknown> = {},
   _connectionId?: string
 ): Promise<JsonRecord> {
   const psd = toRecord(providerSpecificData);
 
-  const tierName =
-    typeof psd.subsTierName === "string" ? psd.subsTierName : undefined;
-  const tierId =
-    typeof psd.subsTierId === "string" ? psd.subsTierId : undefined;
-  const isActive =
-    typeof psd.isSubsActive === "boolean" ? psd.isSubsActive : undefined;
-  const hasPayment =
-    typeof psd.hasPaymentMethod === "boolean"
-      ? psd.hasPaymentMethod
-      : undefined;
+  const tierName = typeof psd.subsTierName === "string" ? psd.subsTierName : undefined;
+  const tierId = typeof psd.subsTierId === "string" ? psd.subsTierId : undefined;
+  const isActive = typeof psd.isSubsActive === "boolean" ? psd.isSubsActive : undefined;
+  const hasPayment = typeof psd.hasPaymentMethod === "boolean" ? psd.hasPaymentMethod : undefined;
 
   // No usage endpoint exists for Muse Code. Return the subscription metadata
   // captured at auth time, with no used/total figures. limit stays EPSILON
@@ -71,7 +64,7 @@ export async function getMuseUsage(
     quotaSource: "localUsageHistory",
     details: [],
     message: tierName
-      ? `Muse Code subscription: ${tierName} (${isSubsActive ? "active" : "inactive"}). No usage API available from Meta — quota is manual.`
+      ? `Muse Code subscription: ${tierName} (${isActive ? "active" : "inactive"}). No usage API available from Meta — quota is manual.`
       : "Muse Code subscription detected. No usage API available from Meta — quota is manual.",
   };
 }
