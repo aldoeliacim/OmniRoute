@@ -380,6 +380,26 @@ async function reuseLiveZoneEntry(
 
   const frozenItems = previous.rawItemDigests.length;
   const liveItems = context.rawItems.slice(frozenItems);
+  const transformedLive: unknown[] = [];
+  // If nothing new to append beyond the frozen prefix, nothing to compress:
+  // returning the body unchanged avoids sending an empty message list to the
+  // engine (e.g. on a resumed conversation where every turn is already frozen).
+  if (liveItems.length === 0) {
+    const frozenPrefix = cloneItems(previous.transformedPrefix);
+    if (!frozenPrefix) return compress(body);
+    const restoredBody = restoreStableFields(body, previous.transformedStableFields);
+    if (!restoredBody) return compress(body);
+    const combinedBody = {
+      ...restoredBody,
+      [context.field]: [...frozenPrefix, ...transformedLive],
+    };
+    return withLiveZoneStats(
+      body,
+      { ...body, body: combinedBody, compressed: false },
+      frozenItems,
+      0
+    );
+  }
   const frozenPrefix = cloneItems(previous.transformedPrefix);
   if (!frozenPrefix) return compress(body);
   // The latest assistant may already be frozen (including on consecutive/parallel results).
