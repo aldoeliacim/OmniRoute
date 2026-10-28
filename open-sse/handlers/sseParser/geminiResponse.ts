@@ -167,6 +167,24 @@ function applyCacheEvidence(
   }
 }
 
+/** Resolve total tokens while preserving Gemini's first-zero and later-zero semantics. */
+function resolveTotalTokens(
+  reportedTotalTokens: number | undefined,
+  previousUsage: Record<string, unknown>,
+  previousTotalTokens: number | undefined,
+  promptTokens: number | undefined,
+  completionTokens: number | undefined
+): number | undefined {
+  const derivedTotal =
+    typeof promptTokens === "number" && typeof completionTokens === "number"
+      ? promptTokens + completionTokens
+      : undefined;
+  return reportedTotalTokens === 0 &&
+    !Object.prototype.hasOwnProperty.call(previousUsage, "total_tokens")
+    ? derivedTotal
+    : (reportedTotalTokens ?? previousTotalTokens ?? derivedTotal);
+}
+
 /** Extract usageMetadata into the OpenAI-shaped usage object, if present. */
 function applyUsageMetadata(parsed: Record<string, unknown>, acc: GeminiSSEAccumulator): void {
   const response = (parsed.response ?? parsed) as Record<string, unknown>;
@@ -181,17 +199,13 @@ function applyUsageMetadata(parsed: Record<string, unknown>, acc: GeminiSSEAccum
   const completionTokens = nonNegativeOr(um.candidatesTokenCount, previousCompletionTokens);
   // Gemini may omit totalTokenCount; keep the last valid total, else derive it.
   const reportedTotalTokens = nonNegativeOr(um.totalTokenCount, undefined);
-  const totalTokens =
-    reportedTotalTokens === 0 &&
-    !Object.prototype.hasOwnProperty.call(previousUsage, "total_tokens")
-      ? typeof promptTokens === "number" && typeof completionTokens === "number"
-        ? promptTokens + completionTokens
-        : undefined
-      : (reportedTotalTokens ??
-        previousTotalTokens ??
-        (typeof promptTokens === "number" && typeof completionTokens === "number"
-          ? promptTokens + completionTokens
-          : undefined));
+  const totalTokens = resolveTotalTokens(
+    reportedTotalTokens,
+    previousUsage,
+    previousTotalTokens,
+    promptTokens,
+    completionTokens
+  );
   const previousCachedTokens = (
     previousUsage.prompt_tokens_details as { cached_tokens?: number } | undefined
   )?.cached_tokens;
