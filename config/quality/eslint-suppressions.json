@@ -207,11 +207,6 @@
       "count": 1
     }
   },
-  "open-sse/handlers/responseTranslator.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "open-sse/handlers/responsesHandler.ts": {
     "@typescript-eslint/no-unused-vars": {
       "count": 1
@@ -399,11 +394,6 @@
   },
   "open-sse/services/codexAccount/index.ts": {
     "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "open-sse/services/codexQuotaFetcher.ts": {
-    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -864,11 +854,6 @@
     }
   },
   "src/app/(dashboard)/dashboard/translator/components/TranslateTab.tsx": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/index.tsx": {
     "@typescript-eslint/no-unused-vars": {
       "count": 1
     }
@@ -1356,14 +1341,6 @@
   "src/lib/middleware/registry.ts": {
     "@typescript-eslint/no-unused-vars": {
       "count": 2
-    }
-  },
-  "src/lib/monitoring/providerHealthAutopilot.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/lib/monitoring/providerHealthMatrix.ts": {
@@ -4405,11 +4382,6 @@
   "tests/unit/security/cloud-sync-hmac.test.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 5
-    }
-  },
-  "tests/unit/serial/provider-health-autopilot.test.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
     }
   },
   "tests/unit/service-combo-metrics.test.ts": {
