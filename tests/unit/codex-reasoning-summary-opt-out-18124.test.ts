@@ -1,12 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-// #18124: OpenAI's safety system flags `reasoning.effort` + `summary: "auto"` +
-// `include: ["reasoning.encrypted_content"]` on gpt-6.1-sol (and the other listed
-// models) as "Potentially unintended activity" next to a long system prompt. The
-// opt-out covers ONLY requests translated from Chat Completions: native Codex
-// Responses clients keep the defaulted summary and the encrypted reasoning include,
-// which carry their reasoning continuity across turns.
+// #18124: preserve effort-only request shape for the listed Codex-family models
+// when translating from Chat Completions. The compatibility opt-out is scoped to
+// translated requests: native Codex Responses clients keep the defaulted summary
+// and encrypted reasoning include used for reasoning continuity across turns.
 
 const { CodexExecutor } = await import("../../open-sse/executors/codex.ts");
 const { translateRequest } = await import("../../open-sse/translator/index.ts");

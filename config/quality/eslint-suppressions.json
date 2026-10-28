@@ -510,7 +510,7 @@
   },
   "open-sse/services/sessionPool/sessionPool.ts": {
     "@typescript-eslint/no-unused-vars": {
-      "count": 3
+      "count": 2
     }
   },
   "open-sse/services/taskAwareRouter.ts": {
@@ -1356,14 +1356,6 @@
   "src/lib/middleware/registry.ts": {
     "@typescript-eslint/no-unused-vars": {
       "count": 2
-    }
-  },
-  "src/lib/monitoring/providerHealthAutopilot.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/lib/monitoring/providerHealthMatrix.ts": {
@@ -4405,11 +4397,6 @@
   "tests/unit/security/cloud-sync-hmac.test.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 5
-    }
-  },
-  "tests/unit/serial/provider-health-autopilot.test.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
     }
   },
   "tests/unit/service-combo-metrics.test.ts": {

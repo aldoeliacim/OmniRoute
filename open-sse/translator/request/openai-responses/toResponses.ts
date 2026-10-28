@@ -35,12 +35,11 @@ import {
 const DEFAULT_RESPONSES_REASONING_SUMMARY = "auto";
 const RESPONSES_REASONING_ENCRYPTED_CONTENT_INCLUDE = "reasoning.encrypted_content";
 
-// OpenAI's safety system flags `reasoning.effort` + `summary: "auto"` +
-// `include: ["reasoning.encrypted_content"]` on certain models (e.g. gpt-6.1-sol)
-// as "Potentially unintended activity" when combined with a long system prompt.
-// Skip the defaulted summary + encrypted-content include for the listed models
-// (optional `codex/` or `cx/` routing prefix, optional effort suffix) so the
-// translated body stays close to what the client sent.
+// Preserve the client's effort-only request shape for the listed model families
+// during Chat-to-Responses translation (optional `codex/` or `cx/` routing prefix,
+// optional effort suffix). Do not add a default summary or encrypted-content
+// include on this path. This compatibility policy makes no claim about the cause
+// or resolution of upstream safety rejections.
 const CODEX_MODEL_PATTERN =
   /^(?:(?:codex|cx)\/)?(?:gpt-6(?:\.1)?-(?:astra|sol|luna)|gpt-5\.6-(?:sol|terra|luna))(?:-(?:none|low|medium|high|xhigh|max|ultra))?$/;
 function isCodexModel(model: unknown): boolean {
@@ -552,10 +551,9 @@ export function openaiToOpenAIResponsesRequest(
     if (effort && effort !== "none") {
       // Effort-only chat request: default a reasoning summary so the upstream
       // streams thinking back (see the constant's note above). For Codex-family
-      // models skip the defaulted summary + encrypted-content include: OpenAI's
-      // safety system flags reasoning.effort + summary:"auto" +
-      // include:["reasoning.encrypted_content"] on gpt-6.1-sol as "Potentially
-      // unintended activity" when combined with a long system prompt.
+      // models, preserve the effort-only request shape rather
+      // than adding an inferred summary and encrypted-content include. This
+      // compatibility path applies only to Chat-to-Responses translation.
       if (isCodexModel(model ?? root.model)) {
         result.reasoning = { effort };
         // Tell the Codex executor not to re-add the defaults on the wire. Native

@@ -13,8 +13,6 @@ This fetcher:
 - Surfaces the subscription tier captured at auth time (`subsTierName`,
   `subsTierId`, `isSubsActive`, `hasPaymentMethod`) from `providerSpecificData`
   so the quota page can show *something* meaningful.
-- Returns a 429-aware message if a future Meta usage endpoint returns
-  rate-limited, so the quota page doesn't crash on provider errors.
 
 No network call is made: the persisted subscription metadata from
 `providerSpecificData` is all OmniRoute has. This is intentional — do not
@@ -43,28 +41,21 @@ export async function getMuseUsage(
   const isActive = typeof psd.isSubsActive === "boolean" ? psd.isSubsActive : undefined;
   const hasPayment = typeof psd.hasPaymentMethod === "boolean" ? psd.hasPaymentMethod : undefined;
 
-  // No usage endpoint exists for Muse Code. Return the subscription metadata
-  // captured at auth time, with no used/total figures. limit stays EPSILON
-  // (unknown) per planRegistry — the user sets the real plan limit in the
-  // Wizard "Limite" step.
+  const activity = isActive === undefined ? "activity unknown" : isActive ? "active" : "inactive";
+
+  // No usage endpoint exists for Muse Code. Return only subscription metadata;
+  // omitting quota values distinguishes unreported usage from exhaustion.
   return {
     provider: "muse-code",
     plan: tierName ?? "unknown",
     subsTierId: tierId ?? undefined,
     isSubsActive: isActive ?? undefined,
     hasPaymentMethod: hasPayment ?? undefined,
-    // No usage numbers from Meta: 0 used, 0 total, no reset time.
-    used: 0,
-    total: 0,
-    remaining: 0,
-    remainingPercentage: 0,
     resetAt: null,
     unlimited: false,
-    isPercentageOnly: false,
-    quotaSource: "localUsageHistory",
     details: [],
     message: tierName
-      ? `Muse Code subscription: ${tierName} (${isActive ? "active" : "inactive"}). No usage API available from Meta — quota is manual.`
+      ? `Muse Code subscription: ${tierName} (${activity}). No usage API available from Meta — quota is manual.`
       : "Muse Code subscription detected. No usage API available from Meta — quota is manual.",
   };
 }
