@@ -65,6 +65,7 @@ import {
   isHedgeCancelledSentinel,
   isAccountSemaphoreCapacityFailure,
   isLocalQueueCapacityErrorBody,
+  isLocalProcessPressureResponse,
   toRecordedTarget,
   resolveDelayMs,
   isModelScoped400,
@@ -124,6 +125,10 @@ import {
 import { isEmptyStreamSiblingRecoveryEnabled } from "../streamRecovery.ts";
 import { waitForCooldownAwareRetry } from "../../../src/sse/services/cooldownAwareRetry.ts";
 
+/**
+ * Executes an admitted target with configured retries and response validation. Returns a
+ * success or terminal response, or a nonterminal result when the loop may try another target.
+ */
 export async function executeTargetAttempt(
   opts: ExecuteTargetAttemptOptions
 ): Promise<ExecuteTargetResult> {
@@ -780,6 +785,11 @@ export async function executeTargetAttempt(
 
     const failure = await readAttemptFailure(result, { log: deps.log, modelStr });
     const { errorText, errorBody, structuredError } = failure;
+    // Return the original verdict before retry hints, health or affinity mutations.
+    // The attempt loop treats this as fatal and cancels already-running hedges.
+    if (isLocalProcessPressureResponse(result, errorBody)) {
+      return { ok: false, response: result };
+    }
     const retryAfter = resolveAttemptRetryAfter(failure);
 
     // Track earliest retryAfter
