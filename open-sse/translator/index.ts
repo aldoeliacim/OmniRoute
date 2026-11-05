@@ -343,6 +343,7 @@ const OPENAI_INCOMPATIBLE_ECHO_FIELDS = [
   "cache_control",
 ];
 
+/** Translate a request between protocols while applying target-specific compatibility rules. */
 export function translateRequest(
   sourceFormat,
   targetFormat,
