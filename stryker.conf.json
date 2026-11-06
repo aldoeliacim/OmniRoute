@@ -47,6 +47,7 @@
       "tests/unit/log-truncation-image-ref.test.ts",
       "tests/unit/m365-native-recovery.test.ts",
       "tests/unit/m365-native-routing.test.ts",
+      "tests/unit/malformed-tool-call-arguments-classification.test.ts",
       "tests/unit/provider-safety-refusal-not-a-ban.test.ts",
       "tests/unit/codex-dual-toggle-policy-18330.test.ts",
       "tests/unit/codex-dual-toggle-routing-18330.test.ts",
