@@ -35,7 +35,7 @@ import { RateLimitReason } from "@omniroute/open-sse/config/constants.ts";
 import {
   claudeQuotaMatchesModel,
   isClaudeQuotaMetadata,
-  isExplicitClaudeQuota429Text,
+  isClaudeWeeklyQuota429Signal,
 } from "@omniroute/open-sse/services/usage/claudeQuota.ts";
 import { getMachineId } from "@/shared/utils/machine";
 import { supportsProviderQuota } from "@/shared/utils/providerQuotaVisibility";
@@ -478,20 +478,11 @@ export function shouldClearErrorStateOnValidProbe(
  * A weekly reset event cannot release an unrelated Claude RPM or monthly-spend
  * cooldown. Require weekly provenance from the persisted upstream error: either
  * a named weekly window or Claude's native account-rate-limit quota wording.
+ *
+ * Defined in the DB-free `claudeQuota` leaf so the connection-recovery tick can
+ * reuse the exact matcher without pulling this module's provider/DB graph.
  */
-export function isClaudeWeeklyQuota429Signal(errorText: string | null | undefined): boolean {
-  if (!errorText) return false;
-  const lower = errorText.toLowerCase();
-  return (
-    lower.includes("weekly") ||
-    lower.includes("seven_day") ||
-    lower.includes("seven day") ||
-    lower.includes("7-day") ||
-    lower.includes("7d") ||
-    (lower.includes("would exceed your account's rate limit") &&
-      isExplicitClaudeQuota429Text(errorText))
-  );
-}
+export { isClaudeWeeklyQuota429Signal };
 
 /** A reset event must not make one full/unknown governing window disappear. */
 export function everyQuotaWindowReplenished(usage: JsonRecord): boolean {

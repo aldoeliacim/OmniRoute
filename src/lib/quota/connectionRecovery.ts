@@ -23,6 +23,7 @@
 
 import { cooldownUntilMs } from "@omniroute/open-sse/services/accountFallback.ts";
 import { readStoredVerificationUrl } from "@omniroute/open-sse/services/antigravityVerification.ts";
+import { isClaudeWeeklyQuota429Signal } from "@omniroute/open-sse/services/usage/claudeQuota.ts";
 import { isAutomatedTestProcess } from "@/shared/utils/testProcess";
 
 /**
@@ -58,6 +59,22 @@ export const CREDITS_EXHAUSTED_STATUS = "credits_exhausted";
  */
 const DEFAULT_CREDITS_REPROBE_MS = 30 * 60 * 1000;
 
+/**
+ * How long to wait before re-probing a Claude subscription weekly-quota park.
+ * Default: 5 minutes. A weekly 429 persists `rate_limited_until` at the window
+ * end (days away). The evidence-based recovery that detects an *early*,
+ * out-of-band reset (maybeClearRecoveredQuotaState / #17043) only runs on a
+ * live usage fetch, which is otherwise driven solely by the ~70-minute
+ * background sync scheduler. Without this re-probe an account that was reset
+ * early stayed parked for up to one or two sync cycles (≈70–140 min) until an
+ * operator manually cleared it. Re-probing on the fast (≈60s) recovery tick at
+ * this cadence drives that same evidence check within ~5 minutes. It does NOT
+ * clear the cooldown blindly: fetchAndPersistProviderLimits only releases the
+ * park on positive replenishment evidence, preserving the hard-statement rule
+ * that a real upstream 429 cooldown is authoritative (#11277).
+ */
+const DEFAULT_CLAUDE_WEEKLY_REPROBE_MS = 5 * 60 * 1000;
+
 /** Minimal connection shape needed to decide recoverability. */
 export interface RecoverableConnectionInput {
   id: string;
@@ -65,6 +82,12 @@ export interface RecoverableConnectionInput {
   rateLimitedUntil?: string | null;
   lastErrorAt?: string | null;
   lastErrorType?: string | null;
+  /** The provider slug (e.g. "claude"). Used to scope the Claude weekly-quota re-probe. */
+  provider?: string | null;
+  /** The persisted upstream error text, used to confirm weekly-quota provenance (#11277). */
+  lastError?: string | null;
+  /** The persisted upstream HTTP status (e.g. 429). */
+  errorCode?: string | number | null;
   /** A Google "verify your account" link is stored (Antigravity 403 VALIDATION_REQUIRED). */
   verificationPending?: boolean;
 }
@@ -79,6 +102,10 @@ export function toRecoverableConnectionInput(
     rateLimitedUntil: typeof row.rateLimitedUntil === "string" ? row.rateLimitedUntil : null,
     lastErrorAt: typeof row.lastErrorAt === "string" ? row.lastErrorAt : null,
     lastErrorType: typeof row.lastErrorType === "string" ? row.lastErrorType : null,
+    provider: typeof row.provider === "string" ? row.provider : null,
+    lastError: typeof row.lastError === "string" ? row.lastError : null,
+    errorCode:
+      typeof row.errorCode === "string" || typeof row.errorCode === "number" ? row.errorCode : null,
     verificationPending: readStoredVerificationUrl(row.providerSpecificData) !== null,
   };
 }
@@ -228,6 +255,53 @@ export function isCreditsExhaustedReprobeCandidate(
 }
 
 /**
+ * True when a Claude subscription weekly-quota park is due for an evidence-based
+ * re-probe. The park persists `rate_limited_until` at the (days-away) weekly
+ * window end, so its cooldown has NOT elapsed; the fast recovery tick must
+ * therefore drive the live usage fetch that can detect an early, out-of-band
+ * reset (maybeClearRecoveredQuotaState / #17043) instead of waiting for the
+ * ~70-minute background sync. Scoped tightly to the Claude weekly-429 signal so
+ * it never re-probes an RPM or monthly-spend cooldown.
+ */
+export function isClaudeWeeklyQuotaReprobeCandidate(
+  connection: RecoverableConnectionInput | null | undefined,
+  nowMs: number,
+  reprobeMs: number = DEFAULT_CLAUDE_WEEKLY_REPROBE_MS,
+  lastReprobeAtMs: number | null = null
+): boolean {
+  if (!connection || typeof connection.id !== "string" || connection.id.length === 0) {
+    return false;
+  }
+  if (normalizeStatus(connection.testStatus) !== RECOVERABLE_COOLDOWN_STATUS) return false;
+  if (normalizeStatus(connection.provider) !== "claude") return false;
+  const err = (connection.lastErrorType || "").trim().toLowerCase();
+  if (err !== "quota_exhausted" && err !== "rate_limited") return false;
+  if (Number(connection.errorCode) !== 429) return false;
+  if (!isClaudeWeeklyQuota429Signal(connection.lastError)) return false;
+  // Only while the persisted cooldown is still in the future: an elapsed
+  // cooldown is already handled by the cheap clear path, so the two sets stay
+  // disjoint and we never double-handle a connection.
+  if (hasElapsedCooldown(connection.rateLimitedUntil, nowMs)) return false;
+  // Pace off the LAST RE-PROBE this process performed, not lastErrorAt. A live
+  // fetch that still sees the window exhausted never rewrites lastErrorAt, so
+  // gating on it would re-probe every tick instead of every reprobeMs. The
+  // first probe (no prior attempt recorded) fires on this tick.
+  if (lastReprobeAtMs === null || !Number.isFinite(lastReprobeAtMs)) return true;
+  return nowMs - lastReprobeAtMs >= reprobeMs;
+}
+
+/**
+ * Per-connection time of the last Claude weekly-quota re-probe this process
+ * issued. Process-local on purpose: losing it on restart only causes one extra
+ * probe per park, which is cheap and safe; the evidence gate still decides.
+ */
+function getLastReprobeMap(): Map<string, number> {
+  const state = getRecoveryState() as { lastReprobeAt?: Map<string, number> };
+  if (!state.lastReprobeAt) state.lastReprobeAt = new Map<string, number>();
+  return state.lastReprobeAt;
+}
+
+/**
  * From a list of connections, return only those whose transient cooldown has
  * elapsed OR whose credits_exhausted status is due for a re-probe.
  * Pure, non-mutating, time injected.
@@ -250,6 +324,9 @@ export interface ConnectionRecoveryTickResult {
   scanned: number;
   recovered: number;
   recoveredIds: string[];
+  /** Claude weekly-quota parks re-probed (evidence-based; not blindly cleared). */
+  reprobed: number;
+  reprobedIds: string[];
 }
 
 /**
@@ -273,10 +350,19 @@ export async function runConnectionRecoveryTick(
       current: RecoverableConnectionInput
     ) => Promise<void>;
     logger?: { info?: (msg: string) => void; warn?: (msg: string) => void };
+    reprobeConnection?: (connectionId: string) => Promise<void>;
+    /** Per-connection last re-probe time (ms). Defaults to process-wide state. */
+    lastReprobeAt?: Map<string, number>;
   } = {}
 ): Promise<ConnectionRecoveryTickResult> {
   const nowMs = deps.nowMs ?? Date.now();
-  const result: ConnectionRecoveryTickResult = { scanned: 0, recovered: 0, recoveredIds: [] };
+  const result: ConnectionRecoveryTickResult = {
+    scanned: 0,
+    recovered: 0,
+    recoveredIds: [],
+    reprobed: 0,
+    reprobedIds: [],
+  };
 
   let connections: RecoverableConnectionInput[];
   try {
@@ -305,7 +391,16 @@ export async function runConnectionRecoveryTick(
 
   result.scanned = connections.length;
   const recoverable = selectRecoverableConnections(connections, nowMs);
-  if (recoverable.length === 0) return result;
+  const lastReprobe = deps.lastReprobeAt ?? getLastReprobeMap();
+  const reprobeCandidates = connections.filter((connection) =>
+    isClaudeWeeklyQuotaReprobeCandidate(
+      connection,
+      nowMs,
+      DEFAULT_CLAUDE_WEEKLY_REPROBE_MS,
+      lastReprobe.get(connection.id) ?? null
+    )
+  );
+  if (recoverable.length === 0 && reprobeCandidates.length === 0) return result;
 
   const clear =
     deps.clearConnectionError ??
@@ -326,9 +421,38 @@ export async function runConnectionRecoveryTick(
     }
   }
 
+  // The re-probe itself is injected (wired by the startup bootstrap) so this
+  // core lib leaf never couples to the heavy provider-limits (DB/network/
+  // executor) module graph. The injected probe does NOT clear the cooldown
+  // directly: the live usage fetch releases the park only on positive
+  // replenishment evidence (maybeClearRecoveredQuotaState / #17043), honouring
+  // the rule that a real upstream 429 cooldown is authoritative (#11277).
+  const reprobe = deps.reprobeConnection;
+  if (reprobe && reprobeCandidates.length > 0) {
+    for (const connection of reprobeCandidates) {
+      // Stamp the attempt BEFORE awaiting, so a slow or failing probe still
+      // counts toward pacing and cannot cause a per-tick retry storm.
+      lastReprobe.set(connection.id, nowMs);
+      try {
+        await reprobe(connection.id);
+        result.reprobed += 1;
+        result.reprobedIds.push(connection.id);
+      } catch (err) {
+        deps.logger?.warn?.(
+          `[ConnectionRecovery] failed to re-probe ${connection.id.slice(0, 8)}: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    }
+  }
+
   if (result.recovered > 0) {
     deps.logger?.info?.(
       `[ConnectionRecovery] proactively restored ${result.recovered} connection(s) with elapsed cooldown`
+    );
+  }
+  if (result.reprobed > 0) {
+    deps.logger?.info?.(
+      `[ConnectionRecovery] re-probed ${result.reprobed} Claude weekly-quota park(s) for an early reset`
     );
   }
   return result;
@@ -395,7 +519,17 @@ export function resolveConnectionRecoveryIntervalMs(
  * build/test processes or when disabled via env. Each tick runs
  * runConnectionRecoveryTick() against the real DB.
  */
-export function initConnectionRecoveryScheduler(): void {
+export function initConnectionRecoveryScheduler(
+  options: {
+    /**
+     * Live re-probe for a Claude weekly-quota park, injected by the startup
+     * bootstrap so this core lib leaf never statically couples to the heavy
+     * provider-limits module graph. When omitted, weekly parks are left to the
+     * slower background sync (unchanged legacy behaviour).
+     */
+    reprobeConnection?: (connectionId: string) => Promise<void>;
+  } = {}
+): void {
   const state = getRecoveryState();
   if (state.initialized || isRecoverySchedulerDisabled()) return;
   state.initialized = true;
@@ -407,7 +541,10 @@ export function initConnectionRecoveryScheduler(): void {
   };
 
   const runTick = () => {
-    runConnectionRecoveryTick({ logger: tickLogger }).catch((err: unknown) => {
+    runConnectionRecoveryTick({
+      logger: tickLogger,
+      reprobeConnection: options.reprobeConnection,
+    }).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`${RECOVERY_LOG_PREFIX} tick error (non-fatal): ${msg}`);
     });

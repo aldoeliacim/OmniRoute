@@ -952,8 +952,21 @@ export async function registerNodejs(): Promise<void> {
       // Proactive connection-cooldown recovery (#8): re-validate connections whose
       // transient `rate_limited_until` window has elapsed OUTSIDE the request hot path,
       // so the first request after a cooldown does not pay the probe latency.
+      // The injected re-probe (#17000-followup) drives the evidence-based weekly-quota
+      // recovery (maybeClearRecoveredQuotaState / #17043) on the fast tick so a Claude
+      // account reset out-of-band before its weekly window end is detected within
+      // minutes instead of waiting for the ~70-minute background sync. It is wired here
+      // (outside the core typecheck graph) so the recovery lib leaf stays decoupled from
+      // the heavy provider-limits module graph.
       import("@/lib/quota/connectionRecovery")
-        .then((m) => m.initConnectionRecoveryScheduler())
+        .then((m) =>
+          m.initConnectionRecoveryScheduler({
+            reprobeConnection: async (connectionId: string) => {
+              const { fetchAndPersistProviderLimits } = await import("@/lib/usage/providerLimits");
+              await fetchAndPersistProviderLimits(connectionId, "scheduled");
+            },
+          })
+        )
         .catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : String(err);
           console.warn("[STARTUP] Connection recovery scheduler failed to start (non-fatal):", msg);

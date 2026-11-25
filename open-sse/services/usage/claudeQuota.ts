@@ -308,6 +308,25 @@ export function isClaudeMinuteRateLimitText(errorText: string): boolean {
   return MINUTE_RATE_LIMIT_RE.test(errorText);
 }
 
+/**
+ * A weekly reset event cannot release an unrelated Claude RPM or monthly-spend
+ * cooldown. Require weekly provenance from the persisted upstream error: either
+ * a named weekly window or Claude's native account-rate-limit quota wording.
+ */
+export function isClaudeWeeklyQuota429Signal(errorText: string | null | undefined): boolean {
+  if (!errorText) return false;
+  const lower = errorText.toLowerCase();
+  return (
+    lower.includes("weekly") ||
+    lower.includes("seven_day") ||
+    lower.includes("seven day") ||
+    lower.includes("7-day") ||
+    lower.includes("7d") ||
+    (lower.includes("would exceed your account's rate limit") &&
+      isExplicitClaudeQuota429Text(errorText))
+  );
+}
+
 function stripDeclaredEffort(modelId: string): string {
   const registeredBase = getRegisteredProviderEffortBaseModelId("claude", modelId);
   if (registeredBase) return registeredBase;
